@@ -1,0 +1,12 @@
+FROM ./models/my-private-model-v1
+
+# Model parameters
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER num_ctx 4096
+
+# System prompt
+SYSTEM """You are a highly specialized AI assistant trained on domain-specific knowledge.
+You provide accurate, detailed, and helpful responses based on your training.
+Always be clear, concise, and professional in your answers."""

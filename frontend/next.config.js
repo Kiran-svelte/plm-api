@@ -1,0 +1,11 @@
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'standalone',
+  env: {
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://plm-api-yq26.onrender.com',
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://hksgkdhesjcbuklsrlmo.supabase.co',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhrc2drZGhlc2pjYnVrbHNybG1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwNTk4MDYsImV4cCI6MjA4NjYzNTgwNn0.He8_KpvR4wP4sECGyQZxyEt94oVexAa1y3HfbNl-wDA',
+  },
+}
+
+module.exports = nextConfig

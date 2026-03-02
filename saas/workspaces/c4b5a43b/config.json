@@ -1,0 +1,17 @@
+{
+  "startup_id": "c4b5a43b",
+  "name": "CryptoBot AI",
+  "niche": "Cryptocurrency Trading",
+  "topics": [
+    "Crypto trading strategies",
+    "Blockchain security",
+    "DeFi protocols explained",
+    "NFT marketplace analysis",
+    "Crypto regulations compliance"
+  ],
+  "created_at": "2026-02-14T14:29:54.675887",
+  "status": "active",
+  "data_generated": 0,
+  "model_status": "pending",
+  "workspace": "workspaces\\c4b5a43b"
+}

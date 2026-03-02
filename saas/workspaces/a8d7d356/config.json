@@ -1,0 +1,17 @@
+{
+  "startup_id": "a8d7d356",
+  "name": "MarketBoost AI",
+  "niche": "Digital Marketing",
+  "topics": [
+    "SEO optimization",
+    "Content marketing",
+    "Social media",
+    "Email campaigns",
+    "Marketing analytics"
+  ],
+  "created_at": "2026-02-14T14:23:07.276369",
+  "status": "active",
+  "data_generated": 0,
+  "model_status": "pending",
+  "workspace": "workspaces\\a8d7d356"
+}

@@ -1,0 +1,17 @@
+{
+  "startup_id": "389b00b5",
+  "name": "MedAI Pro",
+  "niche": "Healthcare AI",
+  "topics": [
+    "Medical diagnosis AI",
+    "Patient data privacy",
+    "Telemedicine platforms",
+    "Healthcare automation",
+    "Medical imaging analysis"
+  ],
+  "created_at": "2026-02-14T14:29:54.662411",
+  "status": "active",
+  "data_generated": 0,
+  "model_status": "pending",
+  "workspace": "workspaces\\389b00b5"
+}

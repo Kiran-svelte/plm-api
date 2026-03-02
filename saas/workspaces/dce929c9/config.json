@@ -1,0 +1,17 @@
+{
+  "startup_id": "dce929c9",
+  "name": "EduLearn AI",
+  "niche": "Educational Technology",
+  "topics": [
+    "Online learning",
+    "Course creation",
+    "Student engagement",
+    "Learning analytics",
+    "Educational content"
+  ],
+  "created_at": "2026-02-14T14:23:07.273561",
+  "status": "active",
+  "data_generated": 0,
+  "model_status": "pending",
+  "workspace": "workspaces\\dce929c9"
+}

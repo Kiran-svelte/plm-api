@@ -1,0 +1,63 @@
+# PLM Enterprise Docker Compose
+# Complete local development environment
+
+version: '3.8'
+
+services:
+  # Backend API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=development
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - plm-network
+
+  # Redis (for background tasks)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - plm-network
+
+  # Celery Worker (for background tasks)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A enterprise.tasks worker --loglevel=info
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - plm-network
+
+networks:
+  plm-network:
+    driver: bridge
+
+volumes:
+  redis-data:

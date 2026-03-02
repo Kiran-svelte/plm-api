@@ -1,0 +1,17 @@
+{
+  "startup_id": "b87830d6",
+  "name": "DevTools Plus",
+  "niche": "Developer Tools",
+  "topics": [
+    "Code review",
+    "CI/CD",
+    "Testing automation",
+    "DevOps",
+    "Code quality"
+  ],
+  "created_at": "2026-02-14T14:23:07.274489",
+  "status": "active",
+  "data_generated": 0,
+  "model_status": "pending",
+  "workspace": "workspaces\\b87830d6"
+}

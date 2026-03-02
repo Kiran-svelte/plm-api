@@ -1,0 +1,28 @@
+# PLM Enterprise - Render Deployment Requirements
+# Lightweight: only what the API actually imports at startup
+
+# Core Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+
+# Database
+supabase>=2.3.0
+
+# Vector/Math (needed by db_client for embeddings)
+numpy>=1.24.0
+
+# Auth
+python-jose[cryptography]>=3.3.0
+
+# API Clients (Groq, SambaNova, Gemini)
+requests>=2.31.0
+tenacity>=8.2.3
+
+# Logging
+rich>=13.7.0
+
+# Async
+aiohttp>=3.9.1
+httpx>=0.26.0

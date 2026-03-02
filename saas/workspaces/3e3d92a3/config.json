@@ -1,0 +1,17 @@
+{
+  "startup_id": "3e3d92a3",
+  "name": "HealthTech AI",
+  "niche": "Healthcare Technology",
+  "topics": [
+    "Medical AI",
+    "Patient care",
+    "Healthcare data",
+    "Telemedicine",
+    "Medical diagnosis"
+  ],
+  "created_at": "2026-02-14T14:22:48.198404",
+  "status": "active",
+  "data_generated": 0,
+  "model_status": "pending",
+  "workspace": "workspaces\\3e3d92a3"
+}

@@ -1,0 +1,138 @@
+{
+  "3e3d92a3": {
+    "startup_id": "3e3d92a3",
+    "name": "HealthTech AI",
+    "niche": "Healthcare Technology",
+    "topics": [
+      "Medical AI",
+      "Patient care",
+      "Healthcare data",
+      "Telemedicine",
+      "Medical diagnosis"
+    ],
+    "created_at": "2026-02-14T14:22:48.198404",
+    "status": "active",
+    "data_generated": 0,
+    "model_status": "pending",
+    "workspace": "workspaces\\3e3d92a3"
+  },
+  "0f0b8923": {
+    "startup_id": "0f0b8923",
+    "name": "HealthTech AI",
+    "niche": "Healthcare Technology",
+    "topics": [
+      "Medical AI",
+      "Patient care",
+      "Healthcare data",
+      "Telemedicine",
+      "Medical diagnosis"
+    ],
+    "created_at": "2026-02-14T14:23:07.267589",
+    "status": "active",
+    "data_generated": 0,
+    "model_status": "pending",
+    "workspace": "workspaces\\0f0b8923"
+  },
+  "bbaa7b81": {
+    "startup_id": "bbaa7b81",
+    "name": "FinanceBot Pro",
+    "niche": "Financial Technology",
+    "topics": [
+      "Personal finance",
+      "Investment strategies",
+      "Crypto trading",
+      "Financial planning",
+      "Tax optimization"
+    ],
+    "created_at": "2026-02-14T14:23:07.267589",
+    "status": "active",
+    "data_generated": 0,
+    "model_status": "pending",
+    "workspace": "workspaces\\bbaa7b81"
+  },
+  "dce929c9": {
+    "startup_id": "dce929c9",
+    "name": "EduLearn AI",
+    "niche": "Educational Technology",
+    "topics": [
+      "Online learning",
+      "Course creation",
+      "Student engagement",
+      "Learning analytics",
+      "Educational content"
+    ],
+    "created_at": "2026-02-14T14:23:07.273561",
+    "status": "active",
+    "data_generated": 0,
+    "model_status": "pending",
+    "workspace": "workspaces\\dce929c9"
+  },
+  "b87830d6": {
+    "startup_id": "b87830d6",
+    "name": "DevTools Plus",
+    "niche": "Developer Tools",
+    "topics": [
+      "Code review",
+      "CI/CD",
+      "Testing automation",
+      "DevOps",
+      "Code quality"
+    ],
+    "created_at": "2026-02-14T14:23:07.274489",
+    "status": "active",
+    "data_generated": 0,
+    "model_status": "pending",
+    "workspace": "workspaces\\b87830d6"
+  },
+  "a8d7d356": {
+    "startup_id": "a8d7d356",
+    "name": "MarketBoost AI",
+    "niche": "Digital Marketing",
+    "topics": [
+      "SEO optimization",
+      "Content marketing",
+      "Social media",
+      "Email campaigns",
+      "Marketing analytics"
+    ],
+    "created_at": "2026-02-14T14:23:07.276369",
+    "status": "active",
+    "data_generated": 0,
+    "model_status": "pending",
+    "workspace": "workspaces\\a8d7d356"
+  },
+  "389b00b5": {
+    "startup_id": "389b00b5",
+    "name": "MedAI Pro",
+    "niche": "Healthcare AI",
+    "topics": [
+      "Medical diagnosis AI",
+      "Patient data privacy",
+      "Telemedicine platforms",
+      "Healthcare automation",
+      "Medical imaging analysis"
+    ],
+    "created_at": "2026-02-14T14:29:54.662411",
+    "status": "active",
+    "data_generated": 5,
+    "model_status": "pending",
+    "workspace": "workspaces\\389b00b5"
+  },
+  "c4b5a43b": {
+    "startup_id": "c4b5a43b",
+    "name": "CryptoBot AI",
+    "niche": "Cryptocurrency Trading",
+    "topics": [
+      "Crypto trading strategies",
+      "Blockchain security",
+      "DeFi protocols explained",
+      "NFT marketplace analysis",
+      "Crypto regulations compliance"
+    ],
+    "created_at": "2026-02-14T14:29:54.675887",
+    "status": "active",
+    "data_generated": 5,
+    "model_status": "pending",
+    "workspace": "workspaces\\c4b5a43b"
+  }
+}

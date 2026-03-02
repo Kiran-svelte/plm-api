@@ -1,0 +1,69 @@
+# PLM Enterprise - Render Deployment Configuration
+# Automatically deploys backend to Render
+
+services:
+  # Backend API Service
+  - type: web
+    name: plm-enterprise-api
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements_light.txt
+    startCommand: uvicorn backend.api:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: SUPABASE_URL
+        value: https://hksgkdhesjcbuklsrlmo.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SAMBANOVA_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: HF_API_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: HF_HOME
+        value: /opt/render/.cache/huggingface
+      - key: TRANSFORMERS_CACHE
+        value: /opt/render/.cache/huggingface
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # Background Worker Service
+  - type: worker
+    name: plm-enterprise-worker
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m enterprise.continuous_worker
+    envVars:
+      - key: SUPABASE_URL
+        value: https://hksgkdhesjcbuklsrlmo.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+    autoDeploy: true
+
+  # Redis Service (for queue)
+  - type: redis
+    name: plm-enterprise-redis
+    region: oregon
+    plan: starter
+    maxmemoryPolicy: noeviction

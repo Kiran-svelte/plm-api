@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ----------------------------------------------------------------
+   PLM Enterprise — Global Styles
+   ---------------------------------------------------------------- */
+
+@layer base {
+  /* Force light mode — all Tailwind classes assume light bg/dark text */
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+
+  /* Smooth scrolling for the whole app */
+  * {
+    scroll-behavior: smooth;
+  }
+
+  /* Better focus rings */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-indigo-500;
+  }
+}
+
+@layer components {
+  /* ---- Skeleton shimmer animation ---- */
+  .skeleton {
+    @apply relative overflow-hidden bg-gray-200 rounded-lg;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.5) 50%,
+      transparent 100%
+    );
+    animation: skeleton-shimmer 1.8s ease-in-out infinite;
+  }
+  @keyframes skeleton-shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  /* ---- Fade-in animation ---- */
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---- Slide-up animation ---- */
+  .animate-slide-up {
+    animation: slide-up 0.35s ease-out;
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ---- Scale-in for modals/dropdowns ---- */
+  .animate-scale-in {
+    animation: scale-in 0.2s ease-out;
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  /* ---- Glass card ---- */
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-sm border border-white/60 shadow-lg shadow-gray-200/50;
+  }
+
+  /* ---- Gradient card accents ---- */
+  .card-gradient-indigo {
+    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  }
+  .card-gradient-emerald {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  }
+  .card-gradient-amber {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  }
+  .card-gradient-rose {
+    background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+  }
+
+  /* ---- Smooth button press ---- */
+  .btn-press {
+    @apply transition-all duration-150;
+  }
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+
+  /* ---- Scrollbar styling ---- */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #d1d5db;
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: #9ca3af;
+  }
+}

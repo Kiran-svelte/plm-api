@@ -1,0 +1,33 @@
+# Core Dependencies
+anthropic>=0.18.0
+openai>=1.12.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+datasets>=2.16.0
+
+# Machine Learning (for training)
+transformers>=4.36.0
+torch>=2.1.0
+accelerate>=0.25.0
+peft>=0.7.0
+trl>=0.7.0
+bitsandbytes>=0.41.0
+
+# Monitoring and Logging
+tqdm>=4.66.0
+colorama>=0.4.6
+rich>=13.7.0
+
+# Utilities
+requests>=2.31.0
+jsonlines>=4.0.0
+tenacity>=8.2.3
+
+# Development
+pytest>=7.4.0
+black>=23.12.0
+flake8>=7.0.0
