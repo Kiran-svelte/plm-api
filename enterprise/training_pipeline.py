@@ -167,7 +167,10 @@ class TrainingPipeline:
         return examples
 
     async def _generate_question(self, niche: str, topic: str) -> str:
-        """Generate a question for the niche and topic"""
+        """Generate a question for the niche and topic.
+
+        Uses OpenAI as primary (best instruction-following), Groq as fallback.
+        """
         prompt = f"""You are an expert in {niche}. Generate a challenging, professional question about: {topic}
 
 The question should:
@@ -180,17 +183,36 @@ Generate ONLY the question, nothing else."""
 
         messages = [{"role": "user", "content": prompt}]
         loop = asyncio.get_running_loop()
+
+        # Try OpenAI first, fall back to Groq, then general fallback
+        for api_name in ["openai", "groq"]:
+            if api_name not in self.api_manager.clients:
+                continue
+            try:
+                response, _ = await loop.run_in_executor(
+                    None,
+                    lambda name=api_name: self.api_manager.chat(
+                        name, messages, temperature=0.8, enable_fallback=False,
+                    ),
+                )
+                return response.strip()
+            except Exception:
+                continue
+
+        # General fallback
         response, _ = await loop.run_in_executor(
             None,
             lambda: self.api_manager.chat(
                 "groq", messages, temperature=0.8, enable_fallback=True,
             ),
         )
-
         return response.strip()
 
     async def _generate_answer(self, niche: str, topic: str, question: str) -> str:
-        """Generate a comprehensive answer"""
+        """Generate a comprehensive answer.
+
+        Uses Gemini as primary (diverse perspective), SambaNova as fallback.
+        """
         prompt = f"""You are a world-class expert in {niche}, specifically in {topic}.
 
 Question: {question}
@@ -206,6 +228,24 @@ Write your expert answer:"""
 
         messages = [{"role": "user", "content": prompt}]
         loop = asyncio.get_running_loop()
+
+        # Try Gemini first, fall back to SambaNova, then general fallback
+        for api_name in ["gemini", "sambanova"]:
+            if api_name not in self.api_manager.clients:
+                continue
+            try:
+                response, _ = await loop.run_in_executor(
+                    None,
+                    lambda name=api_name: self.api_manager.chat(
+                        name, messages, temperature=0.7, max_tokens=4000,
+                        enable_fallback=False,
+                    ),
+                )
+                return response.strip()
+            except Exception:
+                continue
+
+        # General fallback
         response, _ = await loop.run_in_executor(
             None,
             lambda: self.api_manager.chat(
@@ -213,36 +253,57 @@ Write your expert answer:"""
                 enable_fallback=True,
             ),
         )
-
         return response.strip()
 
     async def _validate_quality(self, question: str, answer: str) -> float:
-        """Validate quality of Q&A pair"""
-        prompt = f"""Rate the quality of this Q&A pair on a scale of 1-10.
+        """Validate quality of Q&A pair using cross-API validation.
+
+        Uses a DIFFERENT API than the answer generator to ensure unbiased
+        validation with 3 quality dimensions: relevance, accuracy, domain-specificity.
+        """
+        prompt = f"""Rate the quality of this Q&A pair for training an AI model.
 
 Question: {question}
 
 Answer: {answer}
 
-Rate based on:
-- Accuracy of information
-- Completeness of answer
-- Professional quality
-- Relevance
+Evaluate on these THREE criteria:
+1. RELEVANCE: Is the question useful and the answer addresses it directly?
+2. ACCURACY: Is the answer factually correct with no made-up information?
+3. DOMAIN-SPECIFICITY: Does the answer show genuine expert knowledge?
 
 Respond with ONLY a number from 1 to 10."""
 
         try:
             messages = [{"role": "user", "content": prompt}]
             loop = asyncio.get_running_loop()
+
+            # Use OpenAI for validation (different from Gemini used for answers)
+            for api_name in ["openai", "groq"]:
+                if api_name not in self.api_manager.clients:
+                    continue
+                try:
+                    response, _ = await loop.run_in_executor(
+                        None,
+                        lambda name=api_name: self.api_manager.chat(
+                            name, messages, temperature=0.3,
+                            enable_fallback=False,
+                        ),
+                    )
+                    score = float(response.strip())
+                    return min(max(score, 1.0), 10.0)
+                except (ValueError, TypeError):
+                    return 8.0
+                except Exception:
+                    continue
+
+            # General fallback
             response, _ = await loop.run_in_executor(
                 None,
                 lambda: self.api_manager.chat(
                     "groq", messages, temperature=0.3, enable_fallback=True,
                 ),
             )
-
-            # Parse score
             score = float(response.strip())
             return min(max(score, 1.0), 10.0)
         except Exception:

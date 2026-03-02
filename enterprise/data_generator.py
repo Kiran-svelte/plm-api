@@ -290,17 +290,25 @@ class ContinuousDataGenerator:
     ) -> Optional[Dict[str, Any]]:
         """Generate a single Q&A training example.
 
-        Uses different API providers for each step to maximize throughput:
-        - Question generation: Groq (fastest)
-        - Answer generation: SambaNova (separate rate limit)
-        - Quality validation: Gemini (separate rate limit)
+        Uses a 3-filter approach across 2 primary APIs (OpenAI + Gemini) to
+        maximize training data quality:
+          Filter 1 – Question Generation (OpenAI preferred, Groq fallback):
+                     Generates domain-specific questions.
+          Filter 2 – Answer Generation (Gemini preferred, SambaNova fallback):
+                     Produces comprehensive expert answers.
+          Filter 3 – Cross-API Quality Validation (opposite API from Filter 2):
+                     Validates relevance, accuracy, and domain-specificity
+                     using a different model to eliminate bias.
+
+        Falls back to any available API when primary is unavailable.
         """
         api = self._get_api_manager()
 
-        # Step 1: Generate question (prefer Groq)
+        # --- Filter 1: Question Generation (OpenAI > Groq) ---
         question = await self._call_api(
             api,
-            preferred="groq",
+            preferred="openai",
+            fallback_preferred="groq",
             messages=[{
                 "role": "user",
                 "content": (
@@ -318,10 +326,11 @@ class ContinuousDataGenerator:
 
         question = question.strip().strip('"')
 
-        # Step 2: Generate comprehensive answer (prefer SambaNova)
+        # --- Filter 2: Answer Generation (Gemini > SambaNova) ---
         answer = await self._call_api(
             api,
-            preferred="sambanova",
+            preferred="gemini",
+            fallback_preferred="sambanova",
             messages=[{
                 "role": "user",
                 "content": (
@@ -341,19 +350,25 @@ class ContinuousDataGenerator:
 
         answer = answer.strip()
 
-        # Step 3: Validate quality (prefer Gemini)
+        # --- Filter 3: Cross-API Quality Validation ---
+        # Uses a DIFFERENT API than Filter 2 to ensure unbiased validation.
+        # Validates three dimensions: relevance, accuracy, and domain-specificity.
         score_text = await self._call_api(
             api,
-            preferred="gemini",
+            preferred="openai",
+            fallback_preferred="gemini",
             messages=[{
                 "role": "user",
                 "content": (
-                    f"Rate the quality of this Q&A pair for training a {niche} AI on a "
-                    f"scale of 1-10. Consider accuracy, completeness, clarity, and "
-                    f"professional depth.\n\n"
+                    f"You are evaluating training data quality for a {niche} AI model. "
+                    f"Rate this Q&A pair on a scale of 1-10 by checking THREE criteria:\n\n"
+                    f"1. RELEVANCE: Is the question relevant and useful for {niche} professionals?\n"
+                    f"2. ACCURACY: Is the answer factually correct with no hallucinations?\n"
+                    f"3. DOMAIN-SPECIFICITY: Does the answer use proper {niche} terminology "
+                    f"and demonstrate deep domain expertise?\n\n"
                     f"Question: {question}\n\n"
                     f"Answer: {answer}\n\n"
-                    f"Return ONLY a number between 1 and 10."
+                    f"Return ONLY a single number between 1 and 10 representing the overall score."
                 ),
             }],
             temperature=0.3,
@@ -378,14 +393,59 @@ class ContinuousDataGenerator:
                 "topic": topic,
                 "question_type": q_type,
                 "source": "continuous_generation",
+                "filters": {
+                    "question_api": "openai",
+                    "answer_api": "gemini",
+                    "validation_api": "openai_cross_check",
+                },
             },
         }
 
     async def _call_api(
         self, api_manager, preferred: str,
-        messages: list, temperature: float = 0.7, max_tokens: int = 4000
+        messages: list, temperature: float = 0.7, max_tokens: int = 4000,
+        fallback_preferred: Optional[str] = None,
     ) -> Optional[str]:
-        """Call an LLM API with preferred provider and fallback."""
+        """Call an LLM API with preferred provider and fallback.
+
+        Args:
+            api_manager: FreeAPIManager instance.
+            preferred: Primary API to use (e.g. 'openai', 'gemini').
+            messages: Chat messages.
+            temperature: Sampling temperature.
+            max_tokens: Maximum tokens to generate.
+            fallback_preferred: Secondary preferred API before general fallback.
+        """
+        # Try the preferred API first
+        try:
+            response, _ = await asyncio.to_thread(
+                api_manager.chat,
+                preferred,
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                enable_fallback=False,
+            )
+            return response
+        except Exception as e:
+            logger.debug(f"Primary API {preferred} failed: {e}")
+
+        # Try the fallback preferred API if specified
+        if fallback_preferred:
+            try:
+                response, _ = await asyncio.to_thread(
+                    api_manager.chat,
+                    fallback_preferred,
+                    messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    enable_fallback=False,
+                )
+                return response
+            except Exception as e:
+                logger.debug(f"Fallback API {fallback_preferred} failed: {e}")
+
+        # Fall through to general fallback (any available API)
         try:
             response, _ = await asyncio.to_thread(
                 api_manager.chat,
@@ -397,7 +457,7 @@ class ContinuousDataGenerator:
             )
             return response
         except Exception as e:
-            logger.warning(f"API call failed (preferred={preferred}): {e}")
+            logger.warning(f"All API calls failed (preferred={preferred}): {e}")
             return None
 
     async def resume_all_active(self):

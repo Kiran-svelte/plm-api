@@ -563,7 +563,7 @@ class StartTrainingRequest(BaseModel):
     training_config: Dict[str, Any] = Field(default_factory=dict)
     backend: Optional[str] = Field(
         default=None,
-        description="Training backend: 'local', 'runpod', or 'huggingface'. Auto-selects if not specified."
+        description="Training backend: 'local', 'runpod', 'huggingface', or 'kaggle'. Auto-selects if not specified."
     )
     base_model: Optional[str] = Field(
         default=None,
@@ -1833,12 +1833,25 @@ async def start_training(
             ip_address=_client_ip(req),
         )
 
+        # Include training time estimates for the selected backend
+        estimate = None
+        selected_backend = training_config.get("backend", "auto")
+        base_model_key = training_config.get("base_model", model.get("base_model", "tinyllama-1.1b"))
+        if selected_backend in ("kaggle", "auto", None):
+            try:
+                from enterprise.model_trainer import KaggleNotebookTrainer
+                estimate = KaggleNotebookTrainer.estimate_training_time(base_model_key, td_count if td_count else 100)
+            except Exception:
+                pass
+
         return {
             "id": job["id"],
             "job_id": job["id"],
             "status": "queued",
             "progress": 0,
             "message": "Model training started in background",
+            "backend": selected_backend,
+            "training_estimate": estimate,
         }
     except Exception as exc:
         logger.error(f"start_training failed: {exc}")
@@ -1854,14 +1867,19 @@ async def get_training_backends(
     """List available training backends and supported base models."""
     available = []
     base_models = {}
+    kaggle_estimates = {}
     try:
-        from enterprise.model_trainer import get_model_trainer, BASE_MODELS
+        from enterprise.model_trainer import get_model_trainer, BASE_MODELS, KaggleNotebookTrainer
         trainer = get_model_trainer()
         available = trainer.get_available_backends()
         base_models = {
             key: {"hf_name": val, "recommended_vram": _model_vram(key)}
             for key, val in BASE_MODELS.items()
         }
+        # Add Kaggle training time estimates
+        if "kaggle" in available:
+            for key in BASE_MODELS:
+                kaggle_estimates[key] = KaggleNotebookTrainer.estimate_training_time(key, 500)
     except Exception:
         pass
 
@@ -1869,6 +1887,7 @@ async def get_training_backends(
         "available_backends": available,
         "base_models": base_models,
         "has_gpu": _has_gpu(),
+        "kaggle_estimates": kaggle_estimates,
     }
 
 
