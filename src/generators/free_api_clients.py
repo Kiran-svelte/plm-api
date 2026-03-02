@@ -300,6 +300,86 @@ class OpenRouterClient:
                 continue
 
 
+class OpenAIClient:
+    """OpenAI API client (GPT-4o-mini / GPT-4o)"""
+
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
+        self.api_key = api_key
+        self.model = model
+        self.base_url = "https://api.openai.com/v1"
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    def chat(self, messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 4000) -> str:
+        """Send chat request to OpenAI"""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=60
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        choices = result.get("choices") or []
+        if not choices:
+            raise ValueError(f"OpenAI API returned no choices: {result}")
+        return choices[0]["message"]["content"]
+
+    def chat_stream(self, messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 4000) -> Generator[str, None, None]:
+        """Stream chat response from OpenAI (SSE)."""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True
+        }
+
+        response = requests.post(
+            f"{self.base_url}/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=120,
+            stream=True
+        )
+        response.raise_for_status()
+
+        for line in response.iter_lines():
+            if not line:
+                continue
+            decoded = line.decode("utf-8")
+            if not decoded.startswith("data: "):
+                continue
+            payload = decoded[6:]
+            if payload.strip() == "[DONE]":
+                break
+            try:
+                chunk = json.loads(payload)
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content")
+                if content:
+                    yield content
+            except json.JSONDecodeError:
+                continue
+
+
 class GeminiClient:
     """Google Gemini API client (FREE)"""
 
@@ -399,6 +479,15 @@ class FreeAPIManager:
             )
             logger.info("✓ HuggingFace client initialized")
 
+        # Initialize OpenAI
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            self.clients["openai"] = OpenAIClient(
+                openai_key,
+                os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            )
+            logger.info("✓ OpenAI client initialized")
+
         # Initialize OpenRouter (access to many models)
         openrouter_key = os.getenv("OPENROUTER_API_KEY")
         if openrouter_key:
@@ -408,8 +497,8 @@ class FreeAPIManager:
             )
             logger.info("✓ OpenRouter client initialized")
 
-        # Fallback order (OpenRouter added as primary - it has best rate limits)
-        fallback_order = os.getenv("FALLBACK_ORDER", "openrouter,groq,huggingface,sambanova,gemini")
+        # Fallback order
+        fallback_order = os.getenv("FALLBACK_ORDER", "openrouter,openai,groq,huggingface,sambanova,gemini")
         self.fallback_order = [x.strip() for x in fallback_order.split(",")]
 
         logger.info(f"FREE API Manager initialized with {len(self.clients)} clients")
