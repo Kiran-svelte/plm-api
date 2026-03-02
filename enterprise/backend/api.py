@@ -1833,12 +1833,24 @@ async def start_training(
             ip_address=_client_ip(req),
         )
 
+        # Include training time estimates for the selected backend
+        estimate = None
+        selected_backend = training_config.get("backend", "auto")
+        base_model_key = training_config.get("base_model", model.get("base_model", "tinyllama-1.1b"))
+        try:
+            from enterprise.model_trainer import KaggleNotebookTrainer
+            estimate = KaggleNotebookTrainer.estimate_training_time(base_model_key, td_count if td_count else 100)
+        except Exception:
+            pass
+
         return {
             "id": job["id"],
             "job_id": job["id"],
             "status": "queued",
             "progress": 0,
             "message": "Model training started in background",
+            "backend": selected_backend,
+            "training_estimate": estimate,
         }
     except Exception as exc:
         logger.error(f"start_training failed: {exc}")
