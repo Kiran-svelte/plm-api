@@ -782,9 +782,12 @@ class KaggleNotebookTrainer:
         }
         base_time = base_hours.get(base_model_key, 6.0)
 
-        # Scale by data volume (roughly linear for < 10k examples)
-        scale_factor = max(1.0, num_examples / 500)
-        estimated_hours = base_time * min(scale_factor, 3.0)
+        # Scale linearly by data volume; 500 examples is the baseline (1x).
+        # Cap at 3x to avoid unrealistic extrapolation beyond ~1500 examples.
+        BASELINE_EXAMPLES = 500
+        MAX_SCALE_FACTOR = 3.0
+        scale_factor = max(1.0, num_examples / BASELINE_EXAMPLES)
+        estimated_hours = base_time * min(scale_factor, MAX_SCALE_FACTOR)
 
         # Determine GPU type
         gpu_type = "P100" if base_model_key in ("tinyllama-1.1b", "llama-3.2-1b", "llama-3.2-3b", "phi-3-mini") else "T4x2"
@@ -841,7 +844,18 @@ from datasets import load_dataset
 from huggingface_hub import login
 
 # Login to HuggingFace for model push
-login(token="{hf_token}")
+# Uses Kaggle Secrets if available, falls back to environment variable
+import os
+_hf_token = os.environ.get("HF_TOKEN", "")
+try:
+    from kaggle_secrets import UserSecretsClient
+    _secrets = UserSecretsClient()
+    _hf_token = _secrets.get_secret("HF_TOKEN") or _hf_token
+except Exception:
+    pass
+if not _hf_token:
+    _hf_token = "{hf_token}"
+login(token=_hf_token)
 
 # Load training data
 dataset = load_dataset("json", data_files="/kaggle/input/plm-training-data/training_data.jsonl", split="train")
@@ -925,7 +939,7 @@ api.upload_folder(
     folder_path=adapter_dir,
     repo_id="{hf_repo_name}",
     repo_type="model",
-    token="{hf_token}",
+    token=_hf_token,
     commit_message="PLM auto-trained LoRA adapter",
 )
 print(f"Adapter pushed to https://huggingface.co/{hf_repo_name}")
@@ -1019,7 +1033,7 @@ print(f"Training metrics: {{metrics}}")
 
         # ---- 3. Poll for completion ----
         poll_interval = 120  # Kaggle notebooks are long-running
-        max_polls = 180  # ~6 hours max
+        max_polls = 180  # 180 polls × 120s interval = ~6 hours max wait
         kernel_ref = f"{self.username}/{notebook_slug}"
 
         for poll_num in range(max_polls):
