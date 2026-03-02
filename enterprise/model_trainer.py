@@ -83,6 +83,10 @@ RUNPOD_ENDPOINT_ID = os.getenv("RUNPOD_ENDPOINT_ID", "")
 # HuggingFace config
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
+# Kaggle config
+KAGGLE_USERNAME = os.getenv("KAGGLE_USERNAME", "")
+KAGGLE_KEY = os.getenv("KAGGLE_KEY", "")
+
 
 # ---------------------------------------------------------------------------
 # Training Backend Enum
@@ -92,6 +96,7 @@ class TrainingBackend:
     LOCAL = "local"
     RUNPOD = "runpod"
     HUGGINGFACE = "huggingface"
+    KAGGLE = "kaggle"
 
 
 # ---------------------------------------------------------------------------
@@ -720,6 +725,467 @@ class HuggingFaceTrainer:
 
 
 # ---------------------------------------------------------------------------
+# Kaggle Notebook Training (Free GPU: P100 or T4)
+# ---------------------------------------------------------------------------
+
+class KaggleNotebookTrainer:
+    """Submits fine-tuning jobs to Kaggle Notebooks via the Kaggle API.
+
+    Kaggle provides free GPU (P100/T4) with 30 hours/week quota.
+    Typical training times:
+        - TinyLlama 1.1B: ~2-3 hours on P100
+        - Llama 3.2 3B:   ~4-6 hours on P100
+        - Mistral 7B:     ~8-12 hours on P100 (may need T4x2)
+
+    Requires:
+        - KAGGLE_USERNAME env var
+        - KAGGLE_KEY env var
+    """
+
+    def __init__(self):
+        if not KAGGLE_USERNAME or not KAGGLE_KEY:
+            raise ValueError(
+                "KAGGLE_USERNAME and KAGGLE_KEY environment variables are required for Kaggle training"
+            )
+        self.username = KAGGLE_USERNAME
+        self.api_key = KAGGLE_KEY
+        self.api_url = "https://www.kaggle.com/api/v1"
+
+    def _auth_headers(self) -> Dict[str, str]:
+        """Return HTTP Basic Auth headers for Kaggle API."""
+        import base64
+        credentials = base64.b64encode(f"{self.username}:{self.api_key}".encode()).decode()
+        return {
+            "Authorization": f"Basic {credentials}",
+            "Content-Type": "application/json",
+        }
+
+    @staticmethod
+    def estimate_training_time(base_model_key: str, num_examples: int) -> Dict[str, Any]:
+        """Estimate training time on Kaggle GPU.
+
+        Args:
+            base_model_key: Key from BASE_MODELS dict.
+            num_examples: Number of training examples.
+
+        Returns:
+            Dict with estimated hours, GPU type, and human-readable message.
+        """
+        # Approximate training times on Kaggle P100 GPU (16GB VRAM)
+        base_hours = {
+            "tinyllama-1.1b": 1.5,
+            "llama-3.2-1b": 2.0,
+            "llama-3.2-3b": 4.0,
+            "phi-3-mini": 5.0,
+            "mistral-7b": 10.0,
+            "llama-3.1-8b": 12.0,
+        }
+        base_time = base_hours.get(base_model_key, 6.0)
+
+        # Scale by data volume (roughly linear for < 10k examples)
+        scale_factor = max(1.0, num_examples / 500)
+        estimated_hours = base_time * min(scale_factor, 3.0)
+
+        # Determine GPU type
+        gpu_type = "P100" if base_model_key in ("tinyllama-1.1b", "llama-3.2-1b", "llama-3.2-3b", "phi-3-mini") else "T4x2"
+
+        # When can they chat?
+        chat_available_hours = 0.5  # RAG-based chat available immediately
+        llm_ready_hours = round(estimated_hours + 0.5, 1)  # Fine-tuned model ready after training + deployment
+
+        return {
+            "estimated_training_hours": round(estimated_hours, 1),
+            "gpu_type": gpu_type,
+            "chat_available_in_hours": chat_available_hours,
+            "fine_tuned_model_ready_in_hours": llm_ready_hours,
+            "agentic_tasks_ready_in_hours": llm_ready_hours,
+            "message": (
+                f"Training {base_model_key} with {num_examples} examples on Kaggle {gpu_type}: "
+                f"~{round(estimated_hours, 1)} hours. "
+                f"Chat via RAG is available immediately. "
+                f"Fine-tuned model for direct chat and agentic tasks: ~{llm_ready_hours} hours."
+            ),
+        }
+
+    def _build_notebook_script(
+        self,
+        base_model_name: str,
+        lora_config: Dict[str, Any],
+        training_args: Dict[str, Any],
+        hf_token: str,
+        hf_repo_name: str,
+    ) -> str:
+        """Generate the Python training script for the Kaggle notebook.
+
+        The script is fully self-contained:
+          1. Installs dependencies
+          2. Downloads training data from the Kaggle dataset
+          3. Loads the base model with QLoRA (4-bit)
+          4. Runs LoRA fine-tuning via SFTTrainer
+          5. Pushes the adapter to HuggingFace Hub
+        """
+        return f'''
+# PLM Auto-Generated Training Script for Kaggle
+# Base model: {base_model_name}
+# LoRA config: r={lora_config["r"]}, alpha={lora_config["lora_alpha"]}
+
+!pip install -q peft trl datasets accelerate bitsandbytes transformers huggingface-hub
+
+import torch
+import json
+from pathlib import Path
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from trl import SFTTrainer, SFTConfig
+from datasets import load_dataset
+from huggingface_hub import login
+
+# Login to HuggingFace for model push
+login(token="{hf_token}")
+
+# Load training data
+dataset = load_dataset("json", data_files="/kaggle/input/plm-training-data/training_data.jsonl", split="train")
+print(f"Loaded {{len(dataset)}} training examples")
+
+# Load model with QLoRA
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_use_double_quant=True,
+)
+
+tokenizer = AutoTokenizer.from_pretrained("{base_model_name}", trust_remote_code=True)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+
+model = AutoModelForCausalLM.from_pretrained(
+    "{base_model_name}",
+    quantization_config=bnb_config,
+    device_map="auto",
+    trust_remote_code=True,
+)
+model = prepare_model_for_kbit_training(model)
+
+# Apply LoRA
+peft_config = LoraConfig(
+    r={lora_config["r"]},
+    lora_alpha={lora_config["lora_alpha"]},
+    lora_dropout={lora_config["lora_dropout"]},
+    target_modules={lora_config["target_modules"]},
+    bias="{lora_config["bias"]}",
+    task_type="CAUSAL_LM",
+)
+model = get_peft_model(model, peft_config)
+
+trainable, total = model.get_nb_trainable_parameters()
+print(f"Trainable: {{trainable:,}} / {{total:,}} ({{100*trainable/total:.2f}}%)")
+
+# Training config
+sft_config = SFTConfig(
+    output_dir="/kaggle/working/checkpoints",
+    num_train_epochs={training_args["num_train_epochs"]},
+    per_device_train_batch_size={training_args["per_device_train_batch_size"]},
+    gradient_accumulation_steps={training_args["gradient_accumulation_steps"]},
+    learning_rate={training_args["learning_rate"]},
+    warmup_ratio={training_args["warmup_ratio"]},
+    weight_decay={training_args["weight_decay"]},
+    lr_scheduler_type="{training_args["lr_scheduler_type"]}",
+    logging_steps={training_args["logging_steps"]},
+    save_steps={training_args["save_steps"]},
+    fp16=True,
+    max_seq_length={training_args["max_seq_length"]},
+    optim="paged_adamw_8bit",
+    report_to="none",
+    save_total_limit=2,
+)
+
+# Train
+trainer = SFTTrainer(
+    model=model,
+    train_dataset=dataset,
+    processing_class=tokenizer,
+    args=sft_config,
+)
+
+print("Starting training...")
+result = trainer.train()
+print(f"Training complete! Loss: {{result.training_loss:.4f}}")
+
+# Save adapter
+adapter_dir = "/kaggle/working/adapter"
+model.save_pretrained(adapter_dir)
+tokenizer.save_pretrained(adapter_dir)
+
+# Push to HuggingFace Hub
+from huggingface_hub import HfApi
+api = HfApi()
+api.upload_folder(
+    folder_path=adapter_dir,
+    repo_id="{hf_repo_name}",
+    repo_type="model",
+    token="{hf_token}",
+    commit_message="PLM auto-trained LoRA adapter",
+)
+print(f"Adapter pushed to https://huggingface.co/{hf_repo_name}")
+
+# Save metrics
+metrics = {{
+    "train_loss": round(result.training_loss, 4),
+    "train_runtime_seconds": round(result.metrics.get("train_runtime", 0), 1),
+    "train_samples_per_second": round(result.metrics.get("train_samples_per_second", 0), 2),
+    "training_examples": len(dataset),
+    "backend": "kaggle",
+    "base_model": "{base_model_name}",
+    "hf_repo": "{hf_repo_name}",
+}}
+with open("/kaggle/working/training_metrics.json", "w") as f:
+    json.dump(metrics, f, indent=2)
+print(f"Training metrics: {{metrics}}")
+'''
+
+    async def train(
+        self,
+        base_model_key: str,
+        training_data_path: Path,
+        output_dir: Path,
+        hf_repo_name: str,
+        lora_config: Optional[Dict[str, Any]] = None,
+        training_args: Optional[Dict[str, Any]] = None,
+        progress_callback=None,
+    ) -> Dict[str, Any]:
+        """Submit a training job to Kaggle as a notebook.
+
+        Workflow:
+        1. Upload training data as a Kaggle dataset
+        2. Create and push a Kaggle notebook with the training script
+        3. Poll notebook status until completion
+        4. Download adapter from HuggingFace Hub
+
+        Args:
+            base_model_key: Key from BASE_MODELS dict.
+            training_data_path: Path to JSONL training data file.
+            output_dir: Local directory to save downloaded artifacts.
+            hf_repo_name: HuggingFace repo to push the trained adapter to.
+            lora_config: Override default LoRA config.
+            training_args: Override default training args.
+            progress_callback: Async callable(progress, message).
+
+        Returns:
+            Dict with training metrics and artifact paths.
+        """
+        base_model_name = BASE_MODELS.get(base_model_key, base_model_key)
+        lora_cfg = {**DEFAULT_LORA_CONFIG, **(lora_config or {})}
+        train_args = {**DEFAULT_TRAINING_ARGS, **(training_args or {})}
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        hf_token = HF_TOKEN
+        if not hf_token:
+            raise ValueError("HF_TOKEN is required for Kaggle training (to push adapter to HF Hub)")
+
+        metrics: Dict[str, Any] = {
+            "backend": "kaggle",
+            "base_model": base_model_name,
+            "started_at": datetime.utcnow().isoformat(),
+        }
+
+        if progress_callback:
+            await progress_callback(0.02, "Preparing Kaggle training job...")
+
+        # ---- 1. Create Kaggle dataset with training data ----
+        dataset_slug = f"plm-training-{hashlib.md5(str(training_data_path).encode()).hexdigest()[:8]}"
+
+        if progress_callback:
+            await progress_callback(0.05, "Uploading training data to Kaggle...")
+
+        await self._upload_dataset(dataset_slug, training_data_path)
+
+        if progress_callback:
+            await progress_callback(0.10, "Creating Kaggle notebook...")
+
+        # ---- 2. Create and push Kaggle notebook ----
+        notebook_slug = f"plm-train-{hashlib.md5(hf_repo_name.encode()).hexdigest()[:8]}"
+        script = self._build_notebook_script(
+            base_model_name, lora_cfg, train_args, hf_token, hf_repo_name,
+        )
+
+        await self._create_notebook(
+            notebook_slug, dataset_slug, script, gpu_type="P100",
+        )
+
+        if progress_callback:
+            await progress_callback(0.15, "Kaggle notebook submitted. Training on GPU...")
+
+        # ---- 3. Poll for completion ----
+        poll_interval = 120  # Kaggle notebooks are long-running
+        max_polls = 180  # ~6 hours max
+        kernel_ref = f"{self.username}/{notebook_slug}"
+
+        for poll_num in range(max_polls):
+            await asyncio.sleep(poll_interval)
+
+            status = await self._get_notebook_status(kernel_ref)
+            kaggle_status = status.get("status", "unknown")
+
+            if kaggle_status == "complete":
+                metrics["completed_at"] = datetime.utcnow().isoformat()
+
+                # Download adapter from HuggingFace Hub
+                if progress_callback:
+                    await progress_callback(0.90, "Training complete. Downloading adapter from HuggingFace...")
+
+                try:
+                    await self._download_from_hub(hf_repo_name, output_dir / "adapter")
+                    metrics["hf_repo"] = hf_repo_name
+                    metrics["has_adapter"] = True
+                except Exception as dl_err:
+                    logger.warning(f"Failed to download adapter from HF Hub: {dl_err}")
+                    metrics["has_adapter"] = False
+
+                with open(output_dir / "training_metrics.json", "w") as f:
+                    json.dump(metrics, f, indent=2)
+
+                if progress_callback:
+                    await progress_callback(1.0, "Kaggle training complete!")
+
+                return metrics
+
+            elif kaggle_status in ("error", "cancelAcknowledged"):
+                error_msg = status.get("failureMessage", "Unknown Kaggle error")
+                raise RuntimeError(f"Kaggle notebook failed: {error_msg}")
+
+            else:
+                # Running or queued
+                progress = min(0.15 + (poll_num / max_polls * 0.70), 0.85)
+                if progress_callback:
+                    await progress_callback(
+                        progress,
+                        f"Training on Kaggle GPU... (status: {kaggle_status}, poll {poll_num + 1})",
+                    )
+
+        raise RuntimeError("Kaggle training timed out after maximum polling attempts")
+
+    async def _upload_dataset(self, slug: str, data_path: Path):
+        """Upload training data as a Kaggle dataset."""
+        import tempfile
+
+        # Create dataset metadata
+        metadata = {
+            "title": f"PLM Training Data {slug}",
+            "id": f"{self.username}/{slug}",
+            "licenses": [{"name": "CC0-1.0"}],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+
+            # Copy training data
+            import shutil
+            shutil.copy2(data_path, tmpdir_path / "training_data.jsonl")
+
+            # Write metadata
+            with open(tmpdir_path / "dataset-metadata.json", "w") as f:
+                json.dump(metadata, f, indent=2)
+
+            # Use Kaggle API to create dataset
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                # Try create, fall back to version if exists
+                try:
+                    with open(data_path, "rb") as df:
+                        response = await client.post(
+                            f"{self.api_url}/datasets/create/new",
+                            headers=self._auth_headers(),
+                            json={
+                                "title": metadata["title"],
+                                "slug": slug,
+                                "ownerSlug": self.username,
+                                "licenseName": "CC0-1.0",
+                                "isPrivate": True,
+                            },
+                        )
+                    if response.status_code not in (200, 201, 409):
+                        logger.warning(f"Kaggle dataset create returned {response.status_code}: {response.text[:200]}")
+                except Exception as e:
+                    logger.warning(f"Kaggle dataset upload warning (continuing): {e}")
+
+        logger.info(f"Kaggle dataset prepared: {self.username}/{slug}")
+
+    async def _create_notebook(
+        self, slug: str, dataset_slug: str, script: str, gpu_type: str = "P100"
+    ):
+        """Create and push a Kaggle notebook kernel."""
+        kernel_metadata = {
+            "id": f"{self.username}/{slug}",
+            "title": f"PLM Training {slug}",
+            "code_file": "script.py",
+            "language": "python",
+            "kernel_type": "script",
+            "is_private": True,
+            "enable_gpu": True,
+            "enable_internet": True,
+            "dataset_sources": [f"{self.username}/{dataset_slug}"],
+            "competition_sources": [],
+            "kernel_sources": [],
+        }
+
+        push_payload = {
+            "slug": slug,
+            "newTitle": kernel_metadata["title"],
+            "text": script,
+            "language": "python",
+            "kernelType": "script",
+            "isPrivate": True,
+            "enableGpu": True,
+            "enableInternet": True,
+            "datasetDataSources": [f"{self.username}/{dataset_slug}"],
+            "competitionDataSources": [],
+            "kernelDataSources": [],
+            "categoryIds": [],
+        }
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{self.api_url}/kernels/push",
+                headers=self._auth_headers(),
+                json=push_payload,
+            )
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Kaggle kernel push failed ({response.status_code}): {response.text[:300]}"
+                )
+
+        logger.info(f"Kaggle notebook pushed: {self.username}/{slug}")
+
+    async def _get_notebook_status(self, kernel_ref: str) -> Dict[str, Any]:
+        """Poll Kaggle notebook status."""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self.api_url}/kernels/status",
+                headers=self._auth_headers(),
+                params={"userName": kernel_ref.split("/")[0], "kernelSlug": kernel_ref.split("/")[1]},
+            )
+            if response.status_code == 200:
+                return response.json()
+            return {"status": "unknown"}
+
+    async def _download_from_hub(self, repo_id: str, output_dir: Path):
+        """Download adapter from HuggingFace Hub."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            from huggingface_hub import snapshot_download
+            snapshot_download(
+                repo_id=repo_id,
+                local_dir=str(output_dir),
+                token=HF_TOKEN,
+            )
+            logger.info(f"Adapter downloaded from HF Hub: {repo_id} -> {output_dir}")
+        except Exception as e:
+            logger.error(f"Failed to download from HF Hub: {e}")
+            raise
+
+
+# ---------------------------------------------------------------------------
 # Unified Model Trainer (Orchestrator)
 # ---------------------------------------------------------------------------
 
@@ -765,6 +1231,10 @@ class ModelTrainer:
         if HF_TOKEN:
             backends.append(TrainingBackend.HUGGINGFACE)
 
+        # Check Kaggle
+        if KAGGLE_USERNAME and KAGGLE_KEY:
+            backends.append(TrainingBackend.KAGGLE)
+
         return backends
 
     def select_backend(self, preferred: Optional[str] = None) -> str:
@@ -786,7 +1256,8 @@ class ModelTrainer:
                 "No training backend available. You need one of:\n"
                 "  1. CUDA GPU + pip install peft trl datasets accelerate bitsandbytes\n"
                 "  2. RUNPOD_API_KEY + RUNPOD_ENDPOINT_ID env vars\n"
-                "  3. HF_TOKEN env var"
+                "  3. HF_TOKEN env var\n"
+                "  4. KAGGLE_USERNAME + KAGGLE_KEY env vars (free GPU)"
             )
 
         if preferred and preferred in available:
@@ -910,6 +1381,22 @@ class ModelTrainer:
                     f"plm-enterprise/{org_id[:8]}-{model_id[:8]}-lora",
                 )
                 trainer = HuggingFaceTrainer()
+                metrics = await trainer.train(
+                    base_model_key=base_model_key,
+                    training_data_path=data_path,
+                    output_dir=output_dir,
+                    hf_repo_name=hf_repo,
+                    lora_config=config.get("lora_config"),
+                    training_args=config.get("training_args"),
+                    progress_callback=progress_callback,
+                )
+
+            elif backend == TrainingBackend.KAGGLE:
+                hf_repo = config.get(
+                    "hf_repo_name",
+                    f"plm-enterprise/{org_id[:8]}-{model_id[:8]}-lora",
+                )
+                trainer = KaggleNotebookTrainer()
                 metrics = await trainer.train(
                     base_model_key=base_model_key,
                     training_data_path=data_path,
